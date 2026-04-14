@@ -95,10 +95,11 @@ console.log(`total requests  : ${totalReqs}`);
 console.log(`elapsed         : ${elapsed.toFixed(2)}s`);
 console.log(`throughput      : ${(totalReqs / elapsed).toFixed(1)} req/s`);
 if (rtts.length === 0) {
-  console.log('rtt P50         : N/A (no successful requests)');
-  console.log('rtt P95         : N/A (no successful requests)');
-  console.log('rtt P99         : N/A (no successful requests)');
-  console.log('rtt max         : N/A (no successful requests)');
+  const NA = 'N/A (no successful requests)';
+  console.log(`rtt P50         : ${NA}`);
+  console.log(`rtt P95         : ${NA}`);
+  console.log(`rtt P99         : ${NA}`);
+  console.log(`rtt max         : ${NA}`);
 } else {
   console.log(`rtt P50         : ${percentile(rtts, 0.5).toFixed(2)} ms`);
   console.log(`rtt P95         : ${percentile(rtts, 0.95).toFixed(2)} ms`);
