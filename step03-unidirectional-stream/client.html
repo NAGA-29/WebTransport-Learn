@@ -55,7 +55,9 @@
         log('❌ invalid base64: ' + e.message);
         return;
       }
-      localStorage.setItem('certHash', b64);
+      try {
+        localStorage.setItem('certHash', b64);
+      } catch (_) { /* private browsing or quota – ignore */ }
 
       const wt = new WebTransport('https://localhost:4433/step03', {
         serverCertificateHashes: [{ algorithm: 'sha-256', value: bin.buffer }],
@@ -86,7 +88,7 @@
           break;
         }
         if (result.done) break;
-        readStream(result.value).catch((e) => log('❌ stream read error: ' + e.message));
+        readStream(result.value).catch((e) => log('⚠️ stream read error: ' + e.message));
       }
     } catch (e) {
       log('❌ ' + e.message);
