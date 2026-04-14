@@ -19,7 +19,12 @@ const CERT_HASH_FILE = path.resolve(__dirname, '..', 'certs', 'cert.sha256.b64')
 
 function arg(name, def) {
   const i = process.argv.indexOf('--' + name);
-  return i >= 0 ? process.argv[i + 1] : def;
+  if (i < 0) return def;
+  if (i + 1 >= process.argv.length || process.argv[i + 1].startsWith('--')) {
+    console.error(`Error: --${name} requires a value`);
+    process.exit(1);
+  }
+  return process.argv[i + 1];
 }
 
 const SESSIONS = Number(arg('sessions', 10));
@@ -89,9 +94,16 @@ console.log(`connect success : ${connected}/${SESSIONS}`);
 console.log(`total requests  : ${totalReqs}`);
 console.log(`elapsed         : ${elapsed.toFixed(2)}s`);
 console.log(`throughput      : ${(totalReqs / elapsed).toFixed(1)} req/s`);
-console.log(`rtt P50         : ${percentile(rtts, 0.5).toFixed(2)} ms`);
-console.log(`rtt P95         : ${percentile(rtts, 0.95).toFixed(2)} ms`);
-console.log(`rtt P99         : ${percentile(rtts, 0.99).toFixed(2)} ms`);
-console.log(`rtt max         : ${Math.max(...rtts).toFixed(2)} ms`);
+if (rtts.length === 0) {
+  console.log('rtt P50         : N/A (no successful requests)');
+  console.log('rtt P95         : N/A (no successful requests)');
+  console.log('rtt P99         : N/A (no successful requests)');
+  console.log('rtt max         : N/A (no successful requests)');
+} else {
+  console.log(`rtt P50         : ${percentile(rtts, 0.5).toFixed(2)} ms`);
+  console.log(`rtt P95         : ${percentile(rtts, 0.95).toFixed(2)} ms`);
+  console.log(`rtt P99         : ${percentile(rtts, 0.99).toFixed(2)} ms`);
+  console.log(`rtt max         : ${Math.max(...rtts).toFixed(2)} ms`);
+}
 
 process.exit(0);

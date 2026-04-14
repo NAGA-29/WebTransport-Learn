@@ -18,7 +18,17 @@ export function encodeChat(m) {
 
 /** @param {Uint8Array} buf @returns {ChatMessage} */
 export function decodeChat(buf) {
-  return JSON.parse(new TextDecoder().decode(buf));
+  const m = JSON.parse(new TextDecoder().decode(buf));
+  if (
+    m === null || typeof m !== 'object' || Array.isArray(m) ||
+    m.type !== 'chat' ||
+    typeof m.user !== 'string' ||
+    typeof m.body !== 'string' ||
+    typeof m.ts !== 'number'
+  ) {
+    throw new TypeError(`Invalid ChatMessage: ${JSON.stringify(m)}`);
+  }
+  return m;
 }
 
 /** @param {TypingEvent} e */
@@ -28,5 +38,14 @@ export function encodeTyping(e) {
 
 /** @param {Uint8Array} buf @returns {TypingEvent} */
 export function decodeTyping(buf) {
-  return JSON.parse(new TextDecoder().decode(buf));
+  const e = JSON.parse(new TextDecoder().decode(buf));
+  if (
+    e === null || typeof e !== 'object' || Array.isArray(e) ||
+    e.type !== 'typing' ||
+    typeof e.user !== 'string' ||
+    typeof e.ts !== 'number'
+  ) {
+    throw new TypeError(`Invalid TypingEvent: ${JSON.stringify(e)}`);
+  }
+  return e;
 }

@@ -39,7 +39,8 @@ await startServer({
 
     // 制御チャネル: 最初の bidirectional stream を制御用とする
     const incoming = session.incomingBidirectionalStreams.getReader();
-    const { value: ctrl } = await incoming.read();
+    const { value: ctrl, done } = await incoming.read();
+    if (done || !ctrl) return; // session closed before control stream was opened
     handleControl(session, ctrl).catch((e) => console.log('ctrl err', e.message));
   },
 });
