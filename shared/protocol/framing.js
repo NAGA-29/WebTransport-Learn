@@ -15,6 +15,9 @@
 
 const HEADER_BYTES = 4;
 
+/** 受け入れる最大フレームサイズ (1 MiB)。これを超えるとデコーダがエラーを投げる。 */
+export const MAX_FRAME_SIZE = 1 * 1024 * 1024; // 1 MiB
+
 /**
  * payload (Uint8Array) を length-prefixed なフレームへ変換する。
  * @param {Uint8Array} payload
@@ -59,6 +62,12 @@ export function createFrameDecoder() {
     while (buffer.byteLength >= HEADER_BYTES) {
       const view = new DataView(buffer.buffer, buffer.byteOffset, buffer.byteLength);
       const len = view.getUint32(0, false);
+      if (len > MAX_FRAME_SIZE) {
+        throw new RangeError(
+          `Frame size ${len} exceeds MAX_FRAME_SIZE (${MAX_FRAME_SIZE}). ` +
+          'Close the stream to prevent unbounded memory growth.'
+        );
+      }
       if (buffer.byteLength < HEADER_BYTES + len) break;
       const payload = buffer.slice(HEADER_BYTES, HEADER_BYTES + len);
       frames.push(payload);
