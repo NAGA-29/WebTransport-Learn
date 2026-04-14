@@ -27,8 +27,10 @@ const MIME = {
 const server = http.createServer((req, res) => {
   try {
     const urlPath = decodeURIComponent(new URL(req.url, 'http://x').pathname);
-    let filePath = path.normalize(path.join(root, urlPath));
-    if (!filePath.startsWith(root)) {
+    const relativeUrlPath = urlPath.replace(/^[/\\]+/, '');
+    let filePath = path.normalize(path.join(root, relativeUrlPath));
+    const relativePath = path.relative(root, filePath);
+    if (relativePath.startsWith('..') || path.isAbsolute(relativePath)) {
       res.writeHead(403).end('forbidden');
       return;
     }
