@@ -38,6 +38,10 @@ export function encodeFrame(payload) {
  * ストリーミング入力から完全なフレームを取り出すデコーダ。
  * 断片的な chunk を順に push し、取り出せるフレームを都度返す。
  *
+ * @param {{ maxFrameSize?: number }} [opts]
+ *   maxFrameSize – 1フレームのペイロード上限バイト数 (デフォルト MAX_FRAME_SIZE = 1 MiB)。
+ *   超過時は RangeError を throw する。
+ *
  * 使い方:
  *   const decoder = createFrameDecoder();
  *   for await (const chunk of readable) {
@@ -46,7 +50,7 @@ export function encodeFrame(payload) {
  *     }
  *   }
  */
-export function createFrameDecoder() {
+export function createFrameDecoder({ maxFrameSize = MAX_FRAME_SIZE } = {}) {
   /** @type {Uint8Array} */
   let buffer = new Uint8Array(0);
 
@@ -62,9 +66,9 @@ export function createFrameDecoder() {
     while (buffer.byteLength >= HEADER_BYTES) {
       const view = new DataView(buffer.buffer, buffer.byteOffset, buffer.byteLength);
       const len = view.getUint32(0, false);
-      if (len > MAX_FRAME_SIZE) {
+      if (len > maxFrameSize) {
         throw new RangeError(
-          `Frame size ${len} exceeds MAX_FRAME_SIZE (${MAX_FRAME_SIZE}).`
+          `Frame size ${len} exceeds MAX_FRAME_SIZE (${maxFrameSize}).`
         );
       }
       if (buffer.byteLength < HEADER_BYTES + len) break;

@@ -99,7 +99,10 @@ export function createReliableSender(cfg) {
 export function createReliableReceiver(cfg) {
   const windowSize = cfg.windowSize ?? 4096;
   const seen = new Set();
-  const order = [];
+  // Ring buffer for O(1) eviction instead of array + shift() which is O(n).
+  const ring = new Array(windowSize);
+  let head = 0;   // index of the oldest slot
+  let count = 0;  // number of entries currently stored
 
   async function onPacket(buf) {
     const p = parsePacket(buf);
@@ -107,8 +110,15 @@ export function createReliableReceiver(cfg) {
     await cfg.send(encodeAck(p.seq));
     if (seen.has(p.seq)) return;
     seen.add(p.seq);
-    order.push(p.seq);
-    if (order.length > windowSize) seen.delete(order.shift());
+    if (count === windowSize) {
+      // Window is full: evict the oldest entry in O(1).
+      seen.delete(ring[head]);
+      ring[head] = p.seq;
+      head = (head + 1) % windowSize;
+    } else {
+      ring[(head + count) % windowSize] = p.seq;
+      count++;
+    }
     cfg.onDeliver(p.payload, p.seq);
   }
 
