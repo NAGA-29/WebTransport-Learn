@@ -46,21 +46,50 @@
   $hash.value = localStorage.getItem('certHash') ?? '';
 
   document.getElementById('go').onclick = async () => {
-    const b64 = $hash.value.trim();
-    localStorage.setItem('certHash', b64);
-    const bin = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+    try {
+      const b64 = $hash.value.trim();
+      let bin;
+      try {
+        bin = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+      } catch (e) {
+        log('❌ invalid base64: ' + e.message);
+        return;
+      }
+      localStorage.setItem('certHash', b64);
 
-    const wt = new WebTransport('https://localhost:4433/step03', {
-      serverCertificateHashes: [{ algorithm: 'sha-256', value: bin.buffer }],
-    });
-    await wt.ready;
-    log('✅ connected');
+      const wt = new WebTransport('https://localhost:4433/step03', {
+        serverCertificateHashes: [{ algorithm: 'sha-256', value: bin.buffer }],
+      });
 
-    const incoming = wt.incomingUnidirectionalStreams.getReader();
-    while (true) {
-      const { value: stream, done } = await incoming.read();
-      if (done) break;
-      readStream(stream).catch((e) => log('stream read error: ' + e.message));
+      wt.closed.then(
+        () => log('ℹ️ connection closed'),
+        (e) => log('❌ connection closed with error: ' + e.message),
+      );
+
+      await wt.ready;
+      log('✅ connected');
+
+      let incoming;
+      try {
+        incoming = wt.incomingUnidirectionalStreams.getReader();
+      } catch (e) {
+        log('❌ failed to get stream reader: ' + e.message);
+        return;
+      }
+
+      while (true) {
+        let result;
+        try {
+          result = await incoming.read();
+        } catch (e) {
+          log('❌ incoming streams read error: ' + e.message);
+          break;
+        }
+        if (result.done) break;
+        readStream(result.value).catch((e) => log('❌ stream read error: ' + e.message));
+      }
+    } catch (e) {
+      log('❌ ' + e.message);
     }
   };
 
