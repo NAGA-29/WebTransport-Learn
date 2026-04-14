@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="ja">
+<meta charset="utf-8" />
+<title>Step06 - Realtime Chat (Stream + Datagram)</title>
+<style>
+  body { font-family: system-ui, sans-serif; padding: 2rem; max-width: 720px; }
+  #log { background: #111; color: #0f0; padding: 1rem; border-radius: 8px; min-height: 14rem; max-height: 24rem; overflow: auto; white-space: pre-wrap; }
+  .typing { color: #888; font-style: italic; }
+  input { width: 100%; font-family: monospace; }
+</style>
+
+<h1>Step06 — Realtime Chat</h1>
+<p>本文=Stream / typing=Datagram で分離。2 タブで試してください。</p>
+
+<label>SHA-256 cert hash: <input id="hash" /></label>
+<label>ユーザー名: <input id="user" value="user1" /></label>
+<p><button id="go">Connect</button></p>
+
+<div id="log"></div>
+<p><input id="msg" placeholder="メッセージを打つと相手に typing... が届く / Enter で送信" /></p>
+
+<script type="module">
+  // framing inline
+  const HEADER = 4;
+  function encFrame(u8) { const f = new Uint8Array(HEADER + u8.byteLength); new DataView(f.buffer).setUint32(0, u8.byteLength, false); f.set(u8, HEADER); return f; }
+  function decoder() {
+    let buf = new Uint8Array(0);
+    return { push(c) { const n = new Uint8Array(buf.byteLength + c.byteLength); n.set(buf); n.set(c, buf.byteLength); buf = n; const o = []; while (buf.byteLength >= HEADER) { const len = new DataView(buf.buffer, buf.byteOffset, buf.byteLength).getUint32(0, false); if (buf.byteLength < HEADER + len) break; o.push(buf.slice(HEADER, HEADER + len)); buf = buf.slice(HEADER + len); } return o; } };
+  }
+
+  const $log = document.getElementById('log');
+  const append = (html) => { $log.innerHTML += html + '<br>'; $log.scrollTop = $log.scrollHeight; };
+  const $hash = document.getElementById('hash');
+  $hash.value = localStorage.getItem('certHash') ?? '';
+
+  let wt, chatWriter, datagramWriter;
+  const user = () => document.getElementById('user').value || 'anon';
+
+  document.getElementById('go').onclick = async () => {
+    const b64 = $hash.value.trim(); localStorage.setItem('certHash', b64);
+    const bin = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+    wt = new WebTransport('https://localhost:4433/step06', {
+      serverCertificateHashes: [{ algorithm: 'sha-256', value: bin.buffer }],
+    });
+    await wt.ready;
+    append('<b>connected</b>');
+
+    datagramWriter = wt.datagrams.writable.getWriter();
+
+    // 受信: サーバからの broadcast unidirectional stream を 1 本読み続ける
+    (async () => {
+      const incoming = wt.incomingUnidirectionalStreams.getReader();
+      const { value: stream } = await incoming.read();
+      const r = stream.getReader();
+      const d = decoder();
+      while (true) {
+        const { value, done } = await r.read();
+        if (done) break;
+        for (const f of d.push(value)) {
+          const msg = JSON.parse(new TextDecoder().decode(f));
+          append(`<b>${escapeHtml(msg.user)}</b>: ${escapeHtml(msg.body)}`);
+        }
+      }
+    })().catch(e => append('stream err: ' + e.message));
+
+    // 受信: typing は datagram
+    (async () => {
+      const r = wt.datagrams.readable.getReader();
+      while (true) {
+        const { value, done } = await r.read();
+        if (done) break;
+        const ev = JSON.parse(new TextDecoder().decode(value));
+        append(`<span class="typing">${escapeHtml(ev.user)} typing...</span>`);
+      }
+    })().catch(() => {});
+  };
+
+  // 入力中: datagram で typing 通知 (低頻度スロットル)
+  let lastTyping = 0;
+  document.getElementById('msg').addEventListener('input', () => {
+    if (!datagramWriter) return;
+    const now = Date.now();
+    if (now - lastTyping < 500) return;
+    lastTyping = now;
+    const ev = { type: 'typing', user: user(), ts: now };
+    datagramWriter.write(new TextEncoder().encode(JSON.stringify(ev))).catch(() => {});
+  });
+
+  // Enter で送信: bidi stream を毎回新設
+  document.getElementById('msg').addEventListener('keydown', async (e) => {
+    if (e.key !== 'Enter' || !wt) return;
+    const body = e.target.value; if (!body) return;
+    e.target.value = '';
+    const stream = await wt.createBidirectionalStream();
+    const w = stream.writable.getWriter();
+    await w.write(encFrame(new TextEncoder().encode(JSON.stringify({ type: 'chat', user: user(), body, ts: Date.now() }))));
+    await w.close();
+  });
+
+  function escapeHtml(s) { return String(s).replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+</script>
+</html>

@@ -1,0 +1,10 @@
+sequenceDiagram
+  participant C as Client
+  participant E1 as Edge-1
+  participant E2 as Edge-2
+  participant P as Pub/Sub
+  C->>E1: WebTransport session
+  C->>E1: say hello (bidi stream)
+  E1->>P: publish room=chat #hello
+  P-->>E2: fanout
+  E2-->>Other: uni stream push

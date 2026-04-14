@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="ja">
+<meta charset="utf-8" />
+<title>Step04 - Bidirectional Stream</title>
+<style>
+  body { font-family: system-ui, sans-serif; padding: 2rem; max-width: 720px; }
+  pre { background: #111; color: #0f0; padding: 1rem; border-radius: 8px; min-height: 10rem; max-height: 20rem; overflow: auto; }
+  input { width: 100%; font-family: monospace; }
+</style>
+
+<h1>Step04 — Bidirectional Stream (echo)</h1>
+
+<label>SHA-256 cert hash: <input id="hash" /></label>
+<p><button id="go">Connect</button></p>
+
+<label>送信メッセージ: <input id="msg" placeholder="hello" /></label>
+<p><button id="send" disabled>Send (new stream)</button></p>
+
+<pre id="log"></pre>
+
+<script type="module">
+  const HEADER = 4;
+  function encodeFrame(u8) {
+    const f = new Uint8Array(HEADER + u8.byteLength);
+    new DataView(f.buffer).setUint32(0, u8.byteLength, false);
+    f.set(u8, HEADER); return f;
+  }
+  function createFrameDecoder() {
+    let buf = new Uint8Array(0);
+    return {
+      push(chunk) {
+        const n = new Uint8Array(buf.byteLength + chunk.byteLength);
+        n.set(buf); n.set(chunk, buf.byteLength); buf = n;
+        const out = [];
+        while (buf.byteLength >= HEADER) {
+          const len = new DataView(buf.buffer, buf.byteOffset, buf.byteLength).getUint32(0, false);
+          if (buf.byteLength < HEADER + len) break;
+          out.push(buf.slice(HEADER, HEADER + len));
+          buf = buf.slice(HEADER + len);
+        }
+        return out;
+      },
+    };
+  }
+  const enc = (s) => encodeFrame(new TextEncoder().encode(s));
+  const dec = (u) => new TextDecoder().decode(u);
+
+  const $log = document.getElementById('log');
+  const log = (m) => { $log.textContent += m + '\n'; $log.scrollTop = $log.scrollHeight; };
+  const $hash = document.getElementById('hash');
+  $hash.value = localStorage.getItem('certHash') ?? '';
+
+  let wt;
+  document.getElementById('go').onclick = async () => {
+    const b64 = $hash.value.trim();
+    localStorage.setItem('certHash', b64);
+    const bin = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+    wt = new WebTransport('https://localhost:4433/step04', {
+      serverCertificateHashes: [{ algorithm: 'sha-256', value: bin.buffer }],
+    });
+    await wt.ready;
+    log('✅ connected');
+    document.getElementById('send').disabled = false;
+  };
+
+  document.getElementById('send').onclick = async () => {
+    const text = document.getElementById('msg').value;
+    if (!text) return;
+    const stream = await wt.createBidirectionalStream();
+    const w = stream.writable.getWriter();
+    await w.write(enc(text));
+    await w.close();
+    log('→ ' + text);
+
+    const r = stream.readable.getReader();
+    const decoder = createFrameDecoder();
+    while (true) {
+      const { value, done } = await r.read();
+      if (done) break;
+      for (const f of decoder.push(value)) log('← ' + dec(f));
+    }
+  };
+</script>
+</html>

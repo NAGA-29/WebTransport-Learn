@@ -1,0 +1,8 @@
+flowchart TD
+  A[配信したいデータ] --> B{失ったら致命的？}
+  B -- Yes --> C{順序重要？}
+  C -- Yes --> S1[Bidirectional Stream]
+  C -- No --> S2[Per-request Stream]
+  B -- No --> D{最新値が正義？}
+  D -- Yes --> DG[Datagram]
+  D -- No --> DR[Datagram + 自前 ACK]

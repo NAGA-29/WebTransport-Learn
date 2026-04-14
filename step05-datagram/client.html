@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="ja">
+<meta charset="utf-8" />
+<title>Step05 - Datagram</title>
+<style>
+  body { font-family: system-ui, sans-serif; padding: 2rem; max-width: 720px; }
+  pre { background: #111; color: #0f0; padding: 1rem; border-radius: 8px; min-height: 10rem; max-height: 24rem; overflow: auto; }
+  input { width: 100%; font-family: monospace; }
+</style>
+
+<h1>Step05 — Datagram (位置情報 10Hz 送信)</h1>
+
+<label>SHA-256 cert hash: <input id="hash" /></label>
+<p>
+  <button id="go">Connect</button>
+  <button id="start" disabled>Start sending</button>
+  <button id="stop" disabled>Stop</button>
+</p>
+<pre id="log"></pre>
+
+<script type="module">
+  const $log = document.getElementById('log');
+  const log = (m) => { $log.textContent += m + '\n'; $log.scrollTop = $log.scrollHeight; };
+  const $hash = document.getElementById('hash');
+  $hash.value = localStorage.getItem('certHash') ?? '';
+
+  let wt, writer, timer;
+  let sent = 0, received = 0;
+
+  document.getElementById('go').onclick = async () => {
+    const b64 = $hash.value.trim();
+    localStorage.setItem('certHash', b64);
+    const bin = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+    wt = new WebTransport('https://localhost:4433/step05', {
+      serverCertificateHashes: [{ algorithm: 'sha-256', value: bin.buffer }],
+    });
+    await wt.ready;
+    log('✅ connected');
+
+    writer = wt.datagrams.writable.getWriter();
+    readLoop(wt.datagrams.readable.getReader());
+
+    document.getElementById('start').disabled = false;
+  };
+
+  async function readLoop(reader) {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      received++;
+      const text = new TextDecoder().decode(value);
+      if (received % 10 === 0) log(`← ${text}  (recv=${received}, sent=${sent}, loss=${sent - received})`);
+    }
+  }
+
+  document.getElementById('start').onclick = () => {
+    document.getElementById('start').disabled = true;
+    document.getElementById('stop').disabled = false;
+    timer = setInterval(async () => {
+      sent++;
+      const payload = `${sent},${(Math.random() * 180 - 90).toFixed(4)},${(Math.random() * 360 - 180).toFixed(4)}`;
+      try { await writer.write(new TextEncoder().encode(payload)); }
+      catch (e) { log('write err: ' + e.message); clearInterval(timer); }
+    }, 100);  // 10Hz
+  };
+
+  document.getElementById('stop').onclick = () => {
+    clearInterval(timer);
+    log(`stopped. sent=${sent} received=${received} loss=${sent - received}`);
+    document.getElementById('start').disabled = false;
+    document.getElementById('stop').disabled = true;
+  };
+</script>
+</html>

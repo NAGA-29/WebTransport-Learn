@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="ja">
+<meta charset="utf-8" />
+<title>Step07 - Multiplexing / Rooms</title>
+<style>
+  body { font-family: system-ui, sans-serif; padding: 2rem; max-width: 760px; }
+  .room { border: 1px solid #ccc; padding: .5rem 1rem; margin: .5rem 0; border-radius: 6px; }
+  .log { background: #111; color: #0f0; padding: .5rem; border-radius: 4px; min-height: 6rem; max-height: 12rem; overflow: auto; white-space: pre-wrap; }
+  input, button { font-family: monospace; }
+</style>
+
+<h1>Step07 — Multiplexing</h1>
+
+<label>SHA-256 cert hash: <input id="hash" size="50" /></label>
+<label>user: <input id="user" value="user1" size="8" /></label>
+<button id="go">Connect</button>
+
+<p>
+  Room 名: <input id="room" value="general" />
+  <button id="join" disabled>Join</button>
+</p>
+
+<div id="rooms"></div>
+
+<script type="module">
+  const HEADER = 4;
+  const encFrame = (u8) => { const f = new Uint8Array(HEADER + u8.byteLength); new DataView(f.buffer).setUint32(0, u8.byteLength, false); f.set(u8, HEADER); return f; };
+  const makeDecoder = () => { let buf = new Uint8Array(0); return { push(c) { const n = new Uint8Array(buf.byteLength + c.byteLength); n.set(buf); n.set(c, buf.byteLength); buf = n; const o = []; while (buf.byteLength >= HEADER) { const len = new DataView(buf.buffer, buf.byteOffset, buf.byteLength).getUint32(0, false); if (buf.byteLength < HEADER + len) break; o.push(buf.slice(HEADER, HEADER + len)); buf = buf.slice(HEADER + len); } return o; } }; };
+  const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+  const $hash = document.getElementById('hash');
+  $hash.value = localStorage.getItem('certHash') ?? '';
+  const user = () => document.getElementById('user').value || 'anon';
+
+  let wt, ctrlWriter;
+  const rooms = new Map(); // room -> { logEl, inputEl }
+
+  document.getElementById('go').onclick = async () => {
+    const b64 = $hash.value.trim(); localStorage.setItem('certHash', b64);
+    const bin = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+    wt = new WebTransport('https://localhost:4433/step07', {
+      serverCertificateHashes: [{ algorithm: 'sha-256', value: bin.buffer }],
+    });
+    await wt.ready;
+
+    // 制御 stream (双方向) を 1 本だけ張る
+    const ctrl = await wt.createBidirectionalStream();
+    ctrlWriter = ctrl.writable.getWriter();
+
+    // サーバからのルーム専用 unidirectional streams を読み続ける
+    (async () => {
+      const reader = wt.incomingUnidirectionalStreams.getReader();
+      while (true) {
+        const { value: stream, done } = await reader.read();
+        if (done) break;
+        readRoomStream(stream).catch(() => {});
+      }
+    })();
+
+    document.getElementById('join').disabled = false;
+  };
+
+  async function readRoomStream(stream) {
+    const r = stream.getReader();
+    const decoder = makeDecoder();
+    let room = null;
+    while (true) {
+      const { value, done } = await r.read();
+      if (done) break;
+      for (const f of decoder.push(value)) {
+        const msg = JSON.parse(new TextDecoder().decode(f));
+        if (msg.type === 'hello') { room = msg.room; continue; }
+        const r = rooms.get(msg.room ?? room);
+        if (!r) continue;
+        if (msg.type === 'system') r.logEl.innerHTML += `<i>${esc(msg.body)}</i>\n`;
+        else if (msg.type === 'chat') r.logEl.innerHTML += `<b>${esc(msg.user)}</b>: ${esc(msg.body)}\n`;
+        r.logEl.scrollTop = r.logEl.scrollHeight;
+      }
+    }
+  }
+
+  document.getElementById('join').onclick = async () => {
+    const room = document.getElementById('room').value.trim();
+    if (!room || rooms.has(room)) return;
+    await ctrlWriter.write(encFrame(new TextEncoder().encode(JSON.stringify({ op: 'join', room, user: user() }))));
+
+    const div = document.createElement('div'); div.className = 'room';
+    div.innerHTML = `<b>#${esc(room)}</b> <button>Leave</button><div class="log"></div><input size="50" placeholder="Enter で送信" />`;
+    document.getElementById('rooms').appendChild(div);
+    const logEl = div.querySelector('.log');
+    const inputEl = div.querySelector('input');
+    rooms.set(room, { logEl, inputEl });
+    inputEl.addEventListener('keydown', async (e) => {
+      if (e.key !== 'Enter') return;
+      const body = e.target.value; if (!body) return;
+      e.target.value = '';
+      await ctrlWriter.write(encFrame(new TextEncoder().encode(JSON.stringify({ op: 'say', room, user: user(), body }))));
+    });
+    div.querySelector('button').onclick = async () => {
+      await ctrlWriter.write(encFrame(new TextEncoder().encode(JSON.stringify({ op: 'leave', room, user: user() }))));
+      rooms.delete(room); div.remove();
+    };
+  };
+</script>
+</html>

@@ -1,0 +1,27 @@
+flowchart LR
+  subgraph Client[Clients]
+    C1[Browser A]
+    C2[Browser B]
+    Cn[...]
+  end
+  subgraph Edge[Edge Layer]
+    LB[QUIC-aware LB<br/>UDP 443]
+    EG1[Edge Node 1]
+    EG2[Edge Node 2]
+  end
+  subgraph Core[Core]
+    PUB[Pub/Sub]
+    ST[Session Store]
+    APP[App Services]
+  end
+
+  C1 --> LB
+  C2 --> LB
+  Cn --> LB
+  LB --> EG1
+  LB --> EG2
+  EG1 <--> PUB
+  EG2 <--> PUB
+  EG1 <--> ST
+  EG2 <--> ST
+  PUB <--> APP

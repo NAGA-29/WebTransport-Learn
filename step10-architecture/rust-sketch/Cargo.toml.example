@@ -1,0 +1,17 @@
+# リネームして使う: `mv Cargo.toml.example Cargo.toml`
+# このリポジトリではビルドしない (移行ガイドとして残す雛形)。
+
+[package]
+name = "wtransport-edge"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+wtransport = "0.6"
+tokio = { version = "1", features = ["full"] }
+bytes = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+anyhow = "1"
+tracing = "0.1"
+tracing-subscriber = "0.3"

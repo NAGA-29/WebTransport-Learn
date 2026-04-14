@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="ja">
+<meta charset="utf-8" />
+<title>Step08 - Reliability over Datagram</title>
+<style>
+  body { font-family: system-ui, sans-serif; padding: 2rem; max-width: 720px; }
+  pre { background: #111; color: #0f0; padding: 1rem; border-radius: 8px; min-height: 10rem; max-height: 20rem; overflow: auto; }
+  input { font-family: monospace; }
+</style>
+
+<h1>Step08 — Datagram + ACK/再送</h1>
+
+<label>SHA-256 cert hash: <input id="hash" size="60" /></label>
+<p>
+  loss sim (0-1): <input id="loss" value="0.2" size="4" />
+  <button id="go">Connect</button>
+  <button id="send" disabled>Send 100 msgs</button>
+</p>
+<pre id="log"></pre>
+
+<script type="module">
+  // reliable.js のブラウザ版 (同一ロジックを inline)
+  const TAG_DATA = 0x01, TAG_ACK = 0x02;
+  const encData = (seq, p) => { const o = new Uint8Array(5 + p.byteLength); o[0] = TAG_DATA; new DataView(o.buffer).setUint32(1, seq >>> 0, false); o.set(p, 5); return o; };
+  const encAck = (seq) => { const o = new Uint8Array(5); o[0] = TAG_ACK; new DataView(o.buffer).setUint32(1, seq >>> 0, false); return o; };
+  const parse = (b) => b.byteLength < 5 ? null : { tag: b[0], seq: new DataView(b.buffer, b.byteOffset, b.byteLength).getUint32(1, false), payload: b.slice(5) };
+
+  const $log = document.getElementById('log');
+  const log = (m) => { $log.textContent += m + '\n'; $log.scrollTop = $log.scrollHeight; };
+  const $hash = document.getElementById('hash');
+  $hash.value = localStorage.getItem('certHash') ?? '';
+
+  let wt, writer;
+  let nextSeq = 1;
+  const pending = new Map();
+  const retryMs = 250, maxAttempts = 8;
+
+  async function send(payload) {
+    const seq = nextSeq++;
+    pending.set(seq, { payload, sentAt: Date.now(), attempts: 1 });
+    await lossyWrite(encData(seq, payload));
+    return seq;
+  }
+
+  async function lossyWrite(buf) {
+    const loss = Number(document.getElementById('loss').value || 0);
+    if (Math.random() < loss) { return; /* drop on purpose */ }
+    await writer.write(buf);
+  }
+
+  setInterval(async () => {
+    if (!writer) return;
+    const cutoff = Date.now() - retryMs;
+    for (const [seq, r] of pending) {
+      if (r.sentAt > cutoff) continue;
+      if (r.attempts >= maxAttempts) { pending.delete(seq); log(`✗ gave up #${seq}`); continue; }
+      r.attempts++; r.sentAt = Date.now();
+      await lossyWrite(encData(seq, r.payload));
+    }
+  }, 50);
+
+  document.getElementById('go').onclick = async () => {
+    const b64 = $hash.value.trim(); localStorage.setItem('certHash', b64);
+    const bin = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+    wt = new WebTransport('https://localhost:4433/step08', {
+      serverCertificateHashes: [{ algorithm: 'sha-256', value: bin.buffer }],
+    });
+    await wt.ready;
+    log('connected');
+    writer = wt.datagrams.writable.getWriter();
+    document.getElementById('send').disabled = false;
+
+    const seen = new Set();
+    (async () => {
+      const r = wt.datagrams.readable.getReader();
+      while (true) {
+        const { value, done } = await r.read();
+        if (done) break;
+        const p = parse(value); if (!p) continue;
+        if (p.tag === TAG_ACK) pending.delete(p.seq);
+        else if (p.tag === TAG_DATA) {
+          await lossyWrite(encAck(p.seq));
+          if (seen.has(p.seq)) continue;
+          seen.add(p.seq);
+          log('← ' + new TextDecoder().decode(p.payload) + ` (pending=${pending.size})`);
+        }
+      }
+    })().catch((e) => log('recv err ' + e.message));
+  };
+
+  document.getElementById('send').onclick = async () => {
+    for (let i = 0; i < 100; i++) {
+      await send(new TextEncoder().encode('msg' + i));
+    }
+    log('queued 100 msgs');
+  };
+</script>
+</html>
