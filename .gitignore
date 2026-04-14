@@ -1,0 +1,12 @@
+node_modules/
+package-lock.json
+certs/
+*.pem
+*.der
+.cert-hash
+.DS_Store
+*.log
+.env
+.env.local
+dist/
+build/

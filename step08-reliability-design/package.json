@@ -1,0 +1,14 @@
+{
+  "name": "step08-reliability-design",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "serve-client": "node ../shared/static-serve.js ."
+  },
+  "dependencies": {
+    "@fails-components/webtransport": "^1.2.0",
+    "@fails-components/webtransport-transport-http3-quiche": "^1.2.0"
+  }
+}
