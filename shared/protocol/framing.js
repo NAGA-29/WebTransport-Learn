@@ -68,7 +68,7 @@ export function createFrameDecoder({ maxFrameSize = MAX_FRAME_SIZE } = {}) {
       const len = view.getUint32(0, false);
       if (len > maxFrameSize) {
         throw new RangeError(
-          `Frame size ${len} exceeds MAX_FRAME_SIZE (${maxFrameSize}).`
+          `Frame size ${len} exceeds maximum allowed frame size (${maxFrameSize}).`
         );
       }
       if (buffer.byteLength < HEADER_BYTES + len) break;
